@@ -21,6 +21,7 @@ local config = {
 	backend_host = "localhost",
 	backend_port = 8080,
 	timeout = 5000, -- 5 seconds
+	backend_binary = "/home/n1h41/dev/go/personal/flutter-dtd/tmp/main",
 }
 
 function M.setup(opts)
@@ -194,10 +195,40 @@ function M.navigate_to_selected_widget()
 	-- Open the file and navigate to the line and column
 	vim.cmd(string.format("edit %s", file_path))
 	vim.fn.cursor(location.line or 1, location.column or 1)
+end
 
-	vim.notify(string.format("Navigated to %s:%d:%d",
-			location.file, location.line or 1, location.column or 1),
-		vim.log.levels.INFO)
+-- Helper to extract vm-service URL from profiler_url
+local function extract_vm_service_url(profiler_url)
+	-- profiler_url format: http://127.0.0.1:9100/?uri=<vm-service-url>
+	local uri = profiler_url:match("[?&]uri=([^&]+)")
+	return uri
+end
+
+-- Function to start the Go backend binary
+function M.start_backend()
+	local profiler_url = flutter_dev_tools.get_profiler_url()
+	if not profiler_url then
+		vim.notify("profiler_url is nil", vim.log.levels.ERROR)
+		return
+	end
+	local vm_service_url = extract_vm_service_url(profiler_url)
+	if not vm_service_url then
+		vim.notify("Could not extract vm-service URL from profiler_url", vim.log.levels.ERROR)
+		return
+	end
+	local binary = config.backend_binary or "flutter_navigation_backend"
+	local cmd = { binary, "-vm-service", vm_service_url }
+	vim.notify("Starting Flutter navigation backend with: " .. table.concat(cmd, " "))
+	vim.fn.jobstart(cmd, {
+		detach = true,
+		on_exit = function(_, code)
+			if code == 0 then
+				vim.notify("Flutter navigation backend started successfully", vim.log.levels.INFO)
+			else
+				vim.notify("Failed to start Flutter navigation backend", vim.log.levels.ERROR)
+			end
+		end
+	})
 end
 
 function M.create_commands()
@@ -207,6 +238,10 @@ function M.create_commands()
 
 	vim.api.nvim_create_user_command("FlutterHealth", M.check_health, {
 		desc = "Check Flutter navigation backend health"
+	})
+
+	vim.api.nvim_create_user_command("FlutterBackendStart", M.start_backend, {
+		desc = "Start Flutter navigation Go backend"
 	})
 end
 
