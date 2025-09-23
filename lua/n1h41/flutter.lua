@@ -1,4 +1,5 @@
 local status, flutter_dev_tools = pcall(require, "flutter-tools.dev_tools")
+local actions = require('telescope.actions')
 if not status then
 	vim.notify("flutter-tools.nvim not found.")
 	return
@@ -21,12 +22,22 @@ local config = {
 	backend_host = "localhost",
 	backend_port = 8080,
 	timeout = 5000, -- 5 seconds
-	backend_binary = "/home/n1h41/dev/go/personal/flutter-dtd/tmp/main",
+	backend_binary = "/home/n1h41/dev/go/personal/flutter-dtd/flutter-dtd",
 }
+
+local backend_job_id = nil
 
 function M.setup(opts)
 	if opts then
 		config = vim.tbl_deep_extend("force", config, opts)
+	end
+end
+
+function M.stop_backend()
+	if backend_job_id then
+		vim.fn.jobstop(backend_job_id)
+		vim.notify("Stopped Flutter navigation backend")
+		backend_job_id = nil
 	end
 end
 
@@ -192,8 +203,29 @@ function M.navigate_to_selected_widget()
 		return
 	end
 
-	-- Open the file and navigate to the line and column
-	vim.cmd(string.format("edit %s", file_path))
+	local lib_pos = string.find(file_path, "/lib/", 1, true)
+	local relative_path = string.sub(file_path, lib_pos + 1)
+
+	local current_file_path = vim.fn.expand('%:.')
+
+	if current_file_path ~= relative_path then
+		-- Open the file and navigate to the line and column
+		require('telescope.builtin').find_files({
+			default_text = relative_path,
+			attach_mappings = function(prompt_bufnr, _)
+				actions.select_default:replace(function()
+					actions.close(prompt_bufnr)
+					local selection = require('telescope.actions.state').get_selected_entry()
+					vim.cmd('edit ' .. selection.path)
+					vim.api.nvim_win_set_cursor(0, { location.line, location.column - 1 })
+				end)
+				return true
+			end,
+		})
+		return
+	end
+
+	-- Navigate to selected widgets line and column
 	vim.fn.cursor(location.line or 1, location.column or 1)
 end
 
@@ -219,8 +251,13 @@ function M.start_backend()
 	local binary = config.backend_binary or "flutter_navigation_backend"
 	local cmd = { binary, "-vm-service", vm_service_url }
 	vim.notify("Starting Flutter navigation backend with: " .. table.concat(cmd, " "))
-	vim.fn.jobstart(cmd, {
-		detach = true,
+
+	if backend_job_id then
+		M.stop_backend()
+	end
+
+	backend_job_id = vim.fn.jobstart(cmd, {
+		-- detach = true,
 		on_exit = function(_, code)
 			if code == 0 then
 				vim.notify("Flutter navigation backend started successfully", vim.log.levels.INFO)

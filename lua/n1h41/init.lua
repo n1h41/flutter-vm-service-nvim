@@ -10,7 +10,13 @@ function M.setup()
 	vim.keymap.set("n", "<leader>np", flutter.open_provider_tab)
 	vim.keymap.set("n", "<leader>fw", flutter.navigate_to_selected_widget, { desc = "Navigate to selected Flutter widget" })
 	vim.keymap.set("n", "<leader>fb", flutter.start_backend, { desc = "Start Flutter navigation Go backend" })
+	vim.keymap.set("n", "<leader>fs", flutter.start_backend, { desc = "Stop Flutter navigation Go backend" })
 	flutter.create_commands()
+
+	vim.api.nvim_create_autocmd("VimLeavePre", {
+		callback = flutter.stop_backend(),
+		desc = "Stop Flutter backend on Neovim exit"
+	})
 end
 
 return M
