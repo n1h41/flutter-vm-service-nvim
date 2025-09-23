@@ -41,37 +41,15 @@ function M.stop_backend()
 	end
 end
 
-function M.convert_class_name_to_model_class_name()
-	local word = vim.fn.expand("<cword>")
-	local pattern = "\\v(_\\$|\\<)?(" .. word .. ")(\\s|\\;|\\.|FromJson|\\(|\\>|\\?)"
-	local replacement = "\\1\\2Model\\3"
-	vim.cmd("%s/" .. pattern .. "/" .. replacement .. "/g")
-	vim.notify("Converted class name: " .. word .. " --> " .. word .. "Model")
-end
-
-function M.convert_class_name_to_entity_class_name()
-	local word = vim.fn.expand("<cword>")
-	local pattern = "\\v(_\\$|\\<)?(" .. word .. ")(\\s|\\;|\\.|FromJson|\\(|\\>|\\?)"
-	local replacement = "\\1\\2Model\\3"
-	vim.cmd("%s/" .. pattern .. "/" .. replacement .. "/g")
-	vim.notify("Converted class name: " .. word .. " --> " .. word .. "Entity")
-end
-
 function M.open_network_tab()
-	-- split at before the first question mark
 	local profiler_url = flutter_dev_tools.get_profiler_url()
 	if profiler_url == nil then
 		vim.notify("profiler_url is nil")
 		return
 	end
-	-- split string
 	local parts = splitUrl(profiler_url)
-	--[[ for part in profiler_url:gmatch("[^?]+") do
-    table.insert(parts, part)
-  end ]]
 	local url = parts[1]
 	local query = parts[2]
-	-- insert the string 'network' between the url and the query
 	local network_tab_url = url .. "network?" .. query
 	vim.notify("Opening network tab: " .. network_tab_url)
 	vim.fn.jobstart({ utils.open_command(), network_tab_url }, { detach = true })
@@ -84,37 +62,40 @@ function M.open_debugger_tab()
 		vim.notify("profiler_url is nil")
 		return
 	end
-	-- split string
 	local parts = splitUrl(profiler_url)
-	--[[ for part in profiler_url:gmatch("[^?]+") do
-    table.insert(parts, part)
-  end ]]
 	local url = parts[1]
 	local query = parts[2]
-	-- insert the string 'debugger' between the url and the query
 	local debugger_tab_url = url .. "debugger?" .. query
 	vim.notify("Opening network tab: " .. debugger_tab_url)
 	vim.fn.jobstart({ utils.open_command(), debugger_tab_url }, { detach = true })
 end
 
 function M.open_provider_tab()
-	-- split at before the first question mark
 	local profiler_url = flutter_dev_tools.get_profiler_url()
 	if profiler_url == nil then
 		vim.notify("profiler_url is nil")
 		return
 	end
-	-- split string
 	local parts = splitUrl(profiler_url)
-	--[[ for part in profiler_url:gmatch("[^?]+") do
-    table.insert(parts, part)
-  end ]]
 	local url = parts[1]
 	local query = parts[2]
-	-- insert the string 'provider' between the url and the query
 	local provider_tab_url = url .. "provider_ext?" .. query
 	vim.notify("Opening network tab: " .. provider_tab_url)
 	vim.fn.jobstart({ utils.open_command(), provider_tab_url }, { detach = true })
+end
+
+function M.open_inspector_tab()
+	local profiler_url = flutter_dev_tools.get_profiler_url()
+	if profiler_url == nil then
+		vim.notify("profiler_url is nil")
+		return
+	end
+	local parts = splitUrl(profiler_url)
+	local url = parts[1]
+	local query = parts[2]
+	local inspector_tab_url = url .. "inspector?" .. query
+	vim.notify("Opening inspector tab: " .. inspector_tab_url)
+	vim.fn.jobstart({ utils.open_command(), inspector_tab_url }, { detach = true })
 end
 
 -- Function to make HTTP request to the Go backend
@@ -209,7 +190,6 @@ function M.navigate_to_selected_widget()
 	local current_file_path = vim.fn.expand('%:.')
 
 	if current_file_path ~= relative_path then
-		-- Open the file and navigate to the line and column
 		require('telescope.builtin').find_files({
 			default_text = relative_path,
 			attach_mappings = function(prompt_bufnr, _)
@@ -225,18 +205,14 @@ function M.navigate_to_selected_widget()
 		return
 	end
 
-	-- Navigate to selected widgets line and column
 	vim.fn.cursor(location.line or 1, location.column or 1)
 end
 
--- Helper to extract vm-service URL from profiler_url
 local function extract_vm_service_url(profiler_url)
-	-- profiler_url format: http://127.0.0.1:9100/?uri=<vm-service-url>
 	local uri = profiler_url:match("[?&]uri=([^&]+)")
 	return uri
 end
 
--- Function to start the Go backend binary
 function M.start_backend()
 	local profiler_url = flutter_dev_tools.get_profiler_url()
 	if not profiler_url then
