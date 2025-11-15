@@ -1,5 +1,4 @@
 local status, flutter_dev_tools = pcall(require, "flutter-tools.dev_tools")
-local actions = require('telescope.actions')
 if not status then
 	vim.notify("flutter-tools.nvim not found.")
 	return
@@ -19,13 +18,11 @@ local M = {}
 
 -- Backend configuration for Flutter Navigation
 local config = {
-	backend_host = "localhost",
-	backend_port = 8080,
-	timeout = 5000, -- 5 seconds
-	backend_binary = "/home/n1h41/dev/go/personal/flutter-dtd/flutter-dtd",
+	backend_binary = "flutter-vm-service",
 }
 
 local backend_job_id = nil
+local widgetSelectionMode = false
 
 function M.setup(opts)
 	if opts then
@@ -98,114 +95,14 @@ function M.open_inspector_tab()
 	vim.fn.jobstart({ utils.open_command(), inspector_tab_url }, { detach = true })
 end
 
--- Function to make HTTP request to the Go backend
-local function make_request(endpoint, data)
-	local url = string.format("http://%s:%d%s", config.backend_host, config.backend_port, endpoint)
-
-	local cmd = {
-		"curl",
-		"-s",
-		"-X", "POST",
-		"-H", "Content-Type: application/json",
-		"-d", vim.json.encode(data),
-		"--max-time", tostring(config.timeout / 1000),
-		url
-	}
-
-	local result = vim.system(cmd, { text = true }):wait()
-
-	if result.code ~= 0 then
-		vim.notify("Failed to connect to Flutter navigation backend", vim.log.levels.ERROR)
-		return nil
+function M.toggleWidgetSelctionMode()
+	if backend_job_id then
+		if widgetSelectionMode then
+			vim.fn.chansend(backend_job_id, "flutter.disableWidgetSelection")
+		else
+			vim.fn.chansend(backend_job_id, "flutter.enableWidgetSelection")
+		end
 	end
-
-	local ok, response = pcall(vim.json.decode, result.stdout)
-	if not ok then
-		vim.notify("Failed to parse response from backend", vim.log.levels.ERROR)
-		return nil
-	end
-
-	return response
-end
-
-function M.check_health()
-	local cmd = {
-		"curl",
-		"-s",
-		"--max-time", "3",
-		string.format("http://%s:%d/health", config.backend_host, config.backend_port)
-	}
-
-	local result = vim.system(cmd, { text = true }):wait()
-
-	if result.code ~= 0 then
-		print("❌ Backend not reachable")
-		return false
-	end
-
-	local ok, response = pcall(vim.json.decode, result.stdout)
-	if ok and response.healthy then
-		print("✅ Backend healthy, Connected: " .. (response.connected and "Yes" or "No"))
-		return true
-	else
-		print("❌ Backend unhealthy")
-		return false
-	end
-end
-
-function M.navigate_to_selected_widget()
-	local response = make_request("/navigate", { action = "get_location" })
-
-	if not response then
-		return
-	end
-
-	if not response.success then
-		vim.notify("No Flutter widget selected: " .. (response.message or "Unknown error"), vim.log.levels.WARN)
-		return
-	end
-
-	local location = response.location
-
-	if not location or not location.file then
-		vim.notify("Invalid location data from backend", vim.log.levels.ERROR)
-		return
-	end
-
-	local file_path = location.file
-	if string.match(file_path, "^file://") then
-		file_path = file_path:gsub("^file://", "")
-	elseif string.match(file_path, "^file:/") then
-		file_path = file_path:gsub("^file:/", "/")
-	end
-
-	if vim.fn.filereadable(file_path) == 0 then
-		vim.notify("File does not exist: " .. file_path, vim.log.levels.ERROR)
-		return
-	end
-
-	local lib_pos = string.find(file_path, "/lib/", 1, true)
-	local relative_path = string.sub(file_path, lib_pos + 1)
-
-	local current_file_path = vim.fn.expand('%:.')
-
-	if current_file_path ~= relative_path then
-		require('telescope.builtin').find_files({
-			default_text = relative_path,
-			attach_mappings = function(prompt_bufnr, _)
-				actions.select_default:replace(function()
-					actions.close(prompt_bufnr)
-					local selection = require('telescope.actions.state').get_selected_entry()
-					vim.cmd('edit ' .. selection.path)
-					vim.api.nvim_win_set_cursor(0, { location.line, location.column - 1 })
-				end)
-				return true
-			end,
-		})
-		return
-	end
-
-	vim.fn.cursor(location.line or 1, location.column or 1)
 end
 
 local function extract_vm_service_url(profiler_url)
@@ -224,8 +121,22 @@ function M.start_backend()
 		vim.notify("Could not extract vm-service URL from profiler_url", vim.log.levels.ERROR)
 		return
 	end
-	local binary = config.backend_binary or "flutter_navigation_backend"
-	local cmd = { binary, "-vm-service", vm_service_url }
+
+	-- Get Neovim server socket path
+	vim.fn.serverstart('/tmp/nvim.flutter')
+	local nvim_server = vim.v.servername
+	if not nvim_server or nvim_server == "" then
+		vim.notify(
+			"Warning: Neovim server name not set. Push mode (auto-navigation) won't work. Start nvim with --listen /tmp/nvim.sock",
+			vim.log.levels.WARN)
+		nvim_server = "/tmp/nvim.flutter"
+	end
+
+	local binary = config.backend_binary or "flutter-vm-service"
+	local cmd = {
+		binary,
+		"--url", vm_service_url,
+	}
 	vim.notify("Starting Flutter navigation backend with: " .. table.concat(cmd, " "))
 
 	if backend_job_id then
@@ -245,12 +156,8 @@ function M.start_backend()
 end
 
 function M.create_commands()
-	vim.api.nvim_create_user_command("FlutterNavigate", M.navigate_to_selected_widget, {
-		desc = "Navigate to selected Flutter widget"
-	})
-
-	vim.api.nvim_create_user_command("FlutterHealth", M.check_health, {
-		desc = "Check Flutter navigation backend health"
+	vim.api.nvim_create_user_command("FlutterToggleWidgetSelection", M.toggleWidgetSelctionMode, {
+		desc = "Toggle widget selection mode"
 	})
 
 	vim.api.nvim_create_user_command("FlutterBackendStart", M.start_backend, {
